@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kinocine Smart Multi-Resizer v4</title>
+    <style>
+        :root {
+            --primary-color: #e50914;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #212529;
+            --border-color: #dee2e6;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-sizing: border-box;
+        }
+        h1 {
+            font-size: 24px;
+            margin-top: 0;
+            text-align: center;
+            color: #111;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 10px;
+        }
+        .dropzone {
+            border: 2px dashed var(--primary-color);
+            border-radius: 8px;
+            padding: 50px 20px;
+            text-align: center;
+            cursor: pointer;
+            background: #fff5f5;
+            transition: all 0.2s;
+            margin-bottom: 20px;
+        }
+        .dropzone:hover {
+            background: #ffe3e3;
+        }
+        .dropzone p {
+            margin: 0;
+            font-size: 16px;
+            color: #495057;
+            font-weight: 500;
+        }
+        .options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f1f3f5;
+            border-radius: 8px;
+        }
+        .option-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .option-group label {
+            font-weight: bold;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #495057;
+        }
+        .option-group input, .option-group select {
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+            background: #fff;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            text-align: center;
+            box-sizing: border-box;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background-color: #b80710;
+        }
+        .btn:disabled {
+            background-color: #dee2e6;
+            color: #868e96;
+            cursor: not-allowed;
+        }
+        #status-list {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            background: #fff;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 4px;
+            border-bottom: 1px solid #f1f3f5;
+            font-size: 13px;
+        }
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        .file-name {
+            max-width: 60%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .status-skip { background: #f1f3f5; color: #868e96; }
+        .status-resize { background: #ebfbee; color: #2b8a3e; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Kinocine Smart Multi-Resizer v4</h1>
+    
+    <div class="options">
+        <div class="option-group">
+            <label for="target-width">목표 가로 크기 기준 (px)</label>
+            <input type="number" id="target-width" value="1000" min="10">
+        </div>
+        <div class="option-group">
+            <label for="img-quality">압축 품질</label>
+            <select id="img-quality">
+                <option value="0.9" selected>고품질 (90%)</option>
+                <option value="0.8">용량최적화 (80%)</option>
+                <option value="0.95">원본수준 (95%)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="dropzone" id="dropzone">
+        <p>여기에 이미지 파일들을 드래그앤드롭 하거나 클릭하세요.</p>
+        <input type="file" id="file-input" multiple accept="image/*" style="display: none;">
+    </div>
+
+    <button id="process-btn" class="btn" disabled>필터링 및 리사이즈 시작</button>
+
+    <div id="status-list" style="display: none;"></div>
+</div>
+
+<script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const processBtn = document.getElementById('process-btn');
+    const statusList = document.getElementById('status-list');
+    const targetWidthInput = document.getElementById('target-width');
+    const qualitySelect = document.getElementById('img-quality');
+
+    let selectedFiles = [];
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', handleFileSelect);
+    
+    dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = '#111';
+    });
+    
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.style.borderColor = 'var(--primary-color)';
+    });
+    
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.style.borderColor = 'var(--primary-color)';
+        if (e.dataTransfer.files.length > 0) {
+            handleFiles(e.dataTransfer.files);
+        }
+    });
+
+    function handleFileSelect(e) {
+        if (e.target.files.length > 0) {
+            handleFiles(e.target.files);
+        }
+    }
+
+    function handleFiles(files) {
+        selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/') || file.name.match(/\.(heic|webp|avif)$/i));
+        if (selectedFiles.length > 0) {
+            dropzone.querySelector('p').textContent = `🔥 ${selectedFiles.length}개의 파일 선택 완료`;
+            processBtn.disabled = false;
+            statusList.innerHTML = '';
+            statusList.style.display = 'none';
+        } else {
+            alert('올바른 이미지 파일을 선택해 주세요.');
+        }
+    }
+
+    processBtn.addEventListener('click', async () => {
+        const targetWidth = parseInt(targetWidthInput.value, 10);
+        const quality = parseFloat(qualitySelect.value);
+        
+        processBtn.disabled = true;
+        processBtn.textContent = '🚀 이미지 판별 및 처리 중...';
+        statusList.style.display = 'block';
+        statusList.innerHTML = '<div style="padding-bottom:10px; font-weight:bold;">스마트 필터링 작업을 시작합니다...</div>';
+
+        let downloadCount = 0;
+        let skipCount = 0;
+
+        for (let i = 0; i < selectedFiles.length; i++) {
+            const file = selectedFiles[i];
+            try {
+                const result = await processImage(file, targetWidth, quality);
+                
+                const item = document.createElement('div');
+                item.className = 'status-item';
+
+                if (result.resizing) {
+                    // 1000px 초과본만 파일명 그대로 깔끔하게 다운로드창 트리거
+                    triggerDirectDownload(result.blob, result.name);
+                    downloadCount++;
+                    
+                    item.innerHTML = `
+                        <span class="file-name">💾 ${result.name} <small style="color:#e50914;">(${result.originWidth}px → ${targetWidth}px)</small></span>
+                        <span class="status-badge status-resize">리사이즈 완료 (다운로드됨)</span>
+                    `;
+                } else {
+                    // 1000px 이하 본은 다운로드하지 않고 화면에만 기록 유지
+                    skipCount++;
+                    item.innerHTML = `
+                        <span class="file-name" style="color:#868e96;">🔍 ${file.name} <small>(${result.originWidth}px)</small></span>
+                        <span class="status-badge status-skip">원본유지 (다운로드 패스)</span>
+                    `;
+                }
+                
+                statusList.appendChild(item);
+                statusList.scrollTop = statusList.scrollHeight;
+
+                if (result.resizing) {
+                    await new Promise(r => setTimeout(r, 100)); // 연속 다운로드 브라우저 안전 간격
+                }
+
+            } catch (err) {
+                console.error(err);
+                const item = document.createElement('div');
+                item.className = 'status-item';
+                item.innerHTML = `<span class="file-name">❌ ${file.name}</span><span class="status-badge" style="background:#fff0f6; color:#c92a2a;">오류발생</span>`;
+                statusList.appendChild(item);
+            }
+        }
+
+        processBtn.disabled = false;
+        processBtn.textContent = '필터링 및 리사이즈 시작';
+        
+        const doneMsg = document.createElement('div');
+        doneMsg.style.cssText = 'font-weight:bold; margin-top:12px; padding-top:8px; border-top:1px dashed #dee2e6; color:#0b7285;';
+        doneMsg.textContent = `✔ 작업 완료! [리사이즈 다운로드: ${downloadCount}개] / [작은 원본 패스: ${skipCount}개]. 변경된 파일만 지정된 폴더로 저장되었습니다.`;
+        statusList.appendChild(doneMsg);
+        statusList.scrollTop = statusList.scrollHeight;
+    });
+
+    function triggerDirectDownload(blob, filename) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }
+
+    function processImage(file, targetWidth, quality) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    const originWidth = img.width;
+                    
+                    // 1000px 이하 조건 발동 시 바이패스 리턴
+                    if (originWidth <= targetWidth) {
+                        resolve({
+                            name: file.name,
+                            blob: file,
+                            originWidth: originWidth,
+                            resizing: false
+                        });
+                        return;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    const scaleFactor = targetWidth / originWidth;
+                    canvas.width = targetWidth;
+                    canvas.height = img.height * scaleFactor;
+                    
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    let outType = file.type;
+                    if (!outType || outType === "image/heic") {
+                        outType = "image/jpeg";
+                    }
+                    
+                    let outName = file.name;
+                    if (file.name.toLowerCase().endsWith('.heic')) {
+                        outName = file.name.replace(/\.heic$/i, '.jpg');
+                    }
+                    
+                    canvas.toBlob((blob) => {
+                        resolve({
+                            name: outName,
+                            blob: blob,
+                            originWidth: originWidth,
+                            resizing: true
+                        });
+                    }, outType, quality);
+                };
+                img.onerror = reject;
+                img.src = event.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+</script>
+
+</body>
+</html>
